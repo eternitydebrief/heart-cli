@@ -33,9 +33,6 @@ struct Physics {
 }
 
 
-
-
-// Check if a ray from screen position hits the heart
 fn ray_hits_heart(hx_screen: f64, hz_screen: f64, sin_h: f64, cos_h: f64, sin_v: f64, cos_v: f64) -> bool {
     let cam_dist = 4.0;
     let ox = hx_screen * cos_h - cam_dist * sin_h;
@@ -62,7 +59,6 @@ fn ray_hits_heart(hx_screen: f64, hz_screen: f64, sin_h: f64, cos_h: f64, sin_v:
     false
 }
 
-// Find collision extent in one direction by binary search
 fn find_extent(dir_x: f64, dir_z: f64, sin_h: f64, cos_h: f64, sin_v: f64, cos_v: f64) -> f64 {
     let mut lo = 0.0_f64;
     let mut hi = 2.0_f64;
@@ -78,7 +74,6 @@ fn find_extent(dir_x: f64, dir_z: f64, sin_h: f64, cos_h: f64, sin_v: f64, cos_v
     lo
 }
 
-// Compute collision extents by ray casting (matches renderer exactly)
 fn compute_rotated_extents(rot_h: f64, rot_v: f64, heart_scale: f64) -> (f64, f64, f64, f64) {
     let (sin_h, cos_h) = rot_h.sin_cos();
     let (sin_v, cos_v) = rot_v.sin_cos();
@@ -88,7 +83,6 @@ fn compute_rotated_extents(rot_h: f64, rot_v: f64, heart_scale: f64) -> (f64, f6
     let mut max_up = 0.0_f64;
     let mut max_down = 0.0_f64;
 
-    // Sample 8 angles + cardinals
     for i in 0..8 {
         let angle = (i as f64 / 8.0) * std::f64::consts::TAU;
         let (s, c) = angle.sin_cos();
@@ -102,7 +96,6 @@ fn compute_rotated_extents(rot_h: f64, rot_v: f64, heart_scale: f64) -> (f64, f6
         if ext_z < 0.0 { max_down = max_down.max(-ext_z); }
     }
 
-    // Cardinal directions
     max_right = max_right.max(find_extent(1.0, 0.0, sin_h, cos_h, sin_v, cos_v));
     max_left = max_left.max(find_extent(-1.0, 0.0, sin_h, cos_h, sin_v, cos_v));
     max_up = max_up.max(find_extent(0.0, 1.0, sin_h, cos_h, sin_v, cos_v));
@@ -127,11 +120,6 @@ fn is_point_in_heart(px: f64, py: f64, heart_x: f64, heart_y: f64, heart_size: f
     term * term * term - x2 * ny * ny * ny < 0.0
 }
 
-// Taubin heart implicit surface: (x² + 9/4·y² + z² - 1)³ - x²z³ - 9/200·y²z³ = 0
-// Modified with deeper cleft between lobes
-// Coordinate system: z points UP through the "lobes", -z is the point
-// x and y are horizontal, y is the "narrow" axis (9/4 coefficient)
-// Returns negative inside, positive outside, zero on surface
 fn heart_implicit(x: f64, y: f64, z: f64) -> f64 {
     let x2 = x * x;
     let y2 = y * y;
@@ -141,11 +129,9 @@ fn heart_implicit(x: f64, y: f64, z: f64) -> f64 {
     let term = x2 + 2.25 * y2 + z2 - 1.0;
     let base = term * term * term - x2 * z3 - 0.045 * y2 * z3;
 
-    // Deepen the cleft: add inward push at x≈0, y≈0, z>0
     let cleft_depth = 0.35;
     let cleft_width = 0.02;  // Very narrow for V-shape
     let z_pos = z.max(0.0);
-    // Sharp V-shape falloff using high power
     let dist2 = x2 + y2;
     let sharpness = 1.0 / (1.0 + dist2 / cleft_width).powi(3);
     let cleft = cleft_depth * sharpness * z_pos * z_pos;
@@ -153,7 +139,6 @@ fn heart_implicit(x: f64, y: f64, z: f64) -> f64 {
     base + cleft
 }
 
-// Gradient of implicit function (points outward = surface normal)
 fn heart_gradient(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     let eps = 0.015;  // Fixed epsilon for speed
 
@@ -164,7 +149,6 @@ fn heart_gradient(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     let len = (gx * gx + gy * gy + gz * gz).sqrt();
 
     if len < 0.0001 {
-        // Fallback: radial direction
         let rad = (x * x + y * y).sqrt().max(0.001);
         (x / rad, y / rad, 0.0)
     } else {
@@ -172,7 +156,6 @@ fn heart_gradient(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     }
 }
 
-// Ray march to find surface intersection (optimized)
 fn ray_march_heart(ox: f64, oy: f64, oz: f64, dx: f64, dy: f64, dz: f64) -> Option<(f64, f64, f64, f64, f64, f64)> {
     let mut t = 0.0_f64;
     let max_t = 4.0;
@@ -189,7 +172,6 @@ fn ray_march_heart(ox: f64, oy: f64, oz: f64, dx: f64, dy: f64, dz: f64) -> Opti
         let val = heart_implicit(x, y, z);
 
         if prev_val * val < 0.0 {
-            // Quick binary refinement (3 iterations)
             let mut t0 = t - step;
             let mut t1 = t;
             let mut pv = prev_val;
@@ -241,7 +223,6 @@ fn main() -> std::io::Result<()> {
     let mut heart_size = DEFAULT_HEART_SIZE;
     let mut last_frame = Instant::now();
 
-    // Game mode state
     let mut game_mode = GameMode::Sandbox;
     let mut score: u32 = 0;
     let mut game_time: f64 = 0.0;
@@ -249,13 +230,11 @@ fn main() -> std::io::Result<()> {
     let mut golf_touches: u32 = 0;
     let mut golf_hole: u32 = 0;
 
-    // Target zone (x, y, radius)
     let mut target: Option<(f64, f64, f64)> = None;
     let mut targets_hit: u32 = 0;
     let mut golf_touching: bool = false;  // Track if currently touching heart
     let mut animation_time: f64 = 0.0;  // For 3D target animation
 
-    // ASCII luminance characters from donut.c
     let luminance_chars: &[u8] = b".,-~:;=!*#$@";
 
     'main: loop {
@@ -268,7 +247,6 @@ fn main() -> std::io::Result<()> {
             match event::read()? {
                 Event::Key(KeyEvent { code: KeyCode::Esc, .. }) => break 'main,
                 Event::Key(KeyEvent { code: KeyCode::Char('q'), kind: crossterm::event::KeyEventKind::Press, .. }) => {
-                    // Add a new heart at cursor position (only in Sandbox)
                     if game_mode == GameMode::Sandbox {
                         hearts.push(Physics {
                             x: prev_mouse_x,
@@ -287,21 +265,18 @@ fn main() -> std::io::Result<()> {
                 Event::Key(KeyEvent { code: KeyCode::Left, .. }) => { for h in &mut hearts { h.vx -= 80.0; } },
                 Event::Key(KeyEvent { code: KeyCode::Right, .. }) => { for h in &mut hearts { h.vx += 80.0; } },
                 Event::Key(KeyEvent { code: KeyCode::Char('w'), kind: crossterm::event::KeyEventKind::Press, .. }) => {
-                    // Black hole only in sandbox
                     if game_mode == GameMode::Sandbox {
                         blackhole_mode = !blackhole_mode;
                         whitehole_mode = false;
                     }
                 },
                 Event::Key(KeyEvent { code: KeyCode::Char('e'), kind: crossterm::event::KeyEventKind::Press, .. }) => {
-                    // White hole only in sandbox and target zones (disabled in juggler and golf)
                     if game_mode == GameMode::Sandbox || game_mode == GameMode::TargetZones {
                         whitehole_mode = !whitehole_mode;
                         blackhole_mode = false;
                     }
                 },
                 Event::Key(KeyEvent { code: KeyCode::Char('r'), kind: crossterm::event::KeyEventKind::Press, .. }) => { gravity_dir = (gravity_dir + 1) % 4; },
-                // Game mode keys
                 Event::Key(KeyEvent { code: KeyCode::Char('0'), kind: crossterm::event::KeyEventKind::Press, .. }) => {
                     game_mode = GameMode::Sandbox;
                     blackhole_mode = false;
@@ -369,15 +344,12 @@ fn main() -> std::io::Result<()> {
                         let dx = mx - prev_mouse_x;
                         let dy = my - prev_mouse_y;
 
-                        // Only do cursor collision in normal mode (not black/white hole)
                         if !blackhole_mode && !whitehole_mode {
                             let speed = (dx * dx + dy * dy).sqrt();
                             let mut any_hit = false;
                             for heart in &mut hearts {
-                                // Check both endpoints and ray-cast for fast movement
                                 let mut hit = is_point_in_heart(mx, my, heart.x, heart.y, heart_size);
 
-                                // If moving fast, check along the line
                                 if !hit && speed > 1.0 {
                                     let steps = (speed * 2.0) as i32;
                                     for s in 1..=steps {
@@ -399,7 +371,6 @@ fn main() -> std::io::Result<()> {
                                     heart.rot_v_vel += dy * 0.5;
                                 }
                             }
-                            // Count touch for golf mode (only once per contact)
                             if game_mode == GameMode::HeartGolf {
                                 if any_hit && !golf_touching {
                                     golf_touches += 1;
@@ -415,7 +386,6 @@ fn main() -> std::io::Result<()> {
                 Event::Resize(w, h) => {
                     width = w;
                     height = h;
-                    // Reset target so it spawns in the new screen area
                     if game_mode == GameMode::TargetZones || game_mode == GameMode::HeartGolf {
                         target = None;
                     }
@@ -424,10 +394,8 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // Physics for all hearts
         let heart_scale = heart_size * 0.55;
         for physics in &mut hearts {
-            // Apply gravity based on direction
             match gravity_dir {
                 0 => physics.vy += GRAVITY * dt,  // down
                 1 => physics.vx -= GRAVITY * dt,  // left
@@ -440,23 +408,19 @@ fn main() -> std::io::Result<()> {
             physics.x += physics.vx * dt;
             physics.y += physics.vy * dt;
 
-            // Rotation physics with high friction
             let rot_friction = 0.96;
             physics.rot_h_vel *= rot_friction;
             physics.rot_v_vel *= rot_friction;
             physics.rot_h += physics.rot_h_vel * dt;
             physics.rot_v += physics.rot_v_vel * dt;
 
-            // Bounce with rotation-aware collision
             let (left_ext, right_ext, up_ext, down_ext) = compute_rotated_extents(physics.rot_h, physics.rot_v, heart_scale);
 
-            // Left wall
             if physics.x - left_ext < 1.0 {
                 physics.x = 1.0 + left_ext;
                 physics.vx = -physics.vx * BOUNCE_DAMPING;
                 physics.rot_h_vel += 0.5;
             }
-            // Right wall (narrower in game modes due to score panel)
             let right_limit = if game_mode != GameMode::Sandbox {
                 width as f64 - 27.0  // 25 char panel + 2 for border
             } else {
@@ -467,18 +431,15 @@ fn main() -> std::io::Result<()> {
                 physics.vx = -physics.vx * BOUNCE_DAMPING;
                 physics.rot_h_vel -= 0.5;
             }
-            // Top wall
             if physics.y - up_ext < 1.0 {
                 physics.y = 1.0 + up_ext;
                 physics.vy = -physics.vy * BOUNCE_DAMPING;
             }
-            // Bottom wall (above info panel)
             if physics.y + down_ext > height as f64 - 7.0 {
                 physics.y = height as f64 - 7.0 - down_ext;
                 physics.vy = -physics.vy * BOUNCE_DAMPING;
             }
 
-            // Cursor interaction - solid obstacle or black/white hole
             if mouse_initialized {
                 let dx = physics.x - prev_mouse_x;
                 let dy = (physics.y - prev_mouse_y) * 2.0;
@@ -535,13 +496,11 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // Heart-to-heart collisions with spatial grid
         let collision_radius = heart_size * 0.4;
         let cell_size = collision_radius * 2.5;
         let grid_w = (width as f64 / cell_size).ceil() as usize + 1;
         let grid_h = (height as f64 / cell_size).ceil() as usize + 1;
 
-        // Build spatial grid
         let mut grid: Vec<Vec<usize>> = vec![Vec::new(); grid_w * grid_h];
         for (i, h) in hearts.iter().enumerate() {
             let gx = ((h.x / cell_size) as usize).min(grid_w - 1);
@@ -549,7 +508,6 @@ fn main() -> std::io::Result<()> {
             grid[gy * grid_w + gx].push(i);
         }
 
-        // Check collisions only in neighboring cells
         for i in 0..hearts.len() {
             let gx = ((hearts[i].x / cell_size) as usize).min(grid_w - 1);
             let gy = ((hearts[i].y / cell_size) as usize).min(grid_h - 1);
@@ -597,7 +555,6 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // Game mode logic
         let game_area_width = width as f64 - 25.0;  // Reserve 25 chars for right panel
 
         match game_mode {
@@ -606,7 +563,6 @@ fn main() -> std::io::Result<()> {
                 game_time += dt;
                 score = (game_time * 10.0) as u32;  // Score = deciseconds survived
 
-                // Spawn new heart every 5 seconds
                 if last_spawn.elapsed().as_secs_f64() > 5.0 && hearts.len() < 20 {
                     hearts.push(Physics {
                         x: rand_f64() * (game_area_width - 40.0) + 20.0,
@@ -621,8 +577,6 @@ fn main() -> std::io::Result<()> {
                     last_spawn = Instant::now();
                 }
 
-                // Check if any heart touched the gravity wall (game over)
-                // Use same boundaries as collision detection
                 let floor_y = height as f64 - 7.0;  // Same as bottom wall collision
                 let right_wall = game_area_width - 2.0;
                 for heart in &hearts {
@@ -634,21 +588,18 @@ fn main() -> std::io::Result<()> {
                         _ => false,
                     };
                     if touched_floor {
-                        // Game over - reset
                         game_mode = GameMode::Sandbox;
                         break;
                     }
                 }
             },
             GameMode::TargetZones => {
-                // Spawn target if none exists
                 if target.is_none() {
                     let tx = rand_f64() * (game_area_width - 20.0) + 10.0;
                     let ty = rand_f64() * (height as f64 - 20.0) + 10.0;
                     target = Some((tx, ty, 5.0));
                 }
 
-                // Check if heart hit target
                 if let Some((tx, ty, tr)) = target {
                     for heart in &hearts {
                         let dx = heart.x - tx;
@@ -664,14 +615,12 @@ fn main() -> std::io::Result<()> {
                 }
             },
             GameMode::HeartGolf => {
-                // Spawn goal if none exists
                 if target.is_none() {
                     let tx = rand_f64() * (game_area_width - 20.0) + 10.0;
                     let ty = rand_f64() * (height as f64 - 20.0) + 10.0;
                     target = Some((tx, ty, 4.0));
                 }
 
-                // Check if heart reached goal
                 if let Some((tx, ty, tr)) = target {
                     if let Some(heart) = hearts.first() {
                         let dx = heart.x - tx;
@@ -682,7 +631,6 @@ fn main() -> std::io::Result<()> {
                             golf_hole += 1;
                             golf_touches = 0;
                             target = None;
-                            // Reset heart position
                             if let Some(h) = hearts.first_mut() {
                                 h.x = rand_f64() * (game_area_width - 40.0) + 20.0;
                                 h.y = height as f64 / 2.0;
@@ -695,7 +643,6 @@ fn main() -> std::io::Result<()> {
             },
         }
 
-        // Render buffers
         let w = width as usize;
         let h = height as usize;
         let mut output: Vec<u8> = vec![b' '; w * h];
@@ -705,14 +652,12 @@ fn main() -> std::io::Result<()> {
         let panel_top = h.saturating_sub(5);
         let panel_x = w.saturating_sub(25);
 
-        // Ray march the Taubin heart surface for all hearts
         let heart_scale = heart_size * 0.55;
 
         for physics in &hearts {
             let (sin_h, cos_h) = physics.rot_h.sin_cos();
             let (sin_v, cos_v) = physics.rot_v.sin_cos();
 
-            // Light at cursor position
             let ldx = (prev_mouse_x - physics.x) / heart_size;
             let ldy = (prev_mouse_y - physics.y) / heart_size;
             let ldz = 1.0;
@@ -766,39 +711,28 @@ fn main() -> std::io::Result<()> {
         }
 
 
-        // Draw game area border (above panel) - highlight gravity wall in blue
-        // gravity_dir: 0=down, 1=left, 2=up, 3=right
         let right_border = if game_mode != GameMode::Sandbox && panel_x > 1 { panel_x } else { w - 1 };
 
-        // Top border
         for x in 0..=right_border {
             let ch = if x == 0 || x == right_border { b'+' } else { b'-' };
             output[x] = ch;
             lum_buffer[x] = if gravity_dir == 2 { -1.5 } else { -1.0 };
         }
-        // Continue top border after panel (gray, not gravity-highlighted)
         if game_mode != GameMode::Sandbox && panel_x > 1 {
-            // Top right corner already handled by panel rendering
         }
 
-        // Side borders (only up to info panel)
         for y in 1..panel_top {
-            // Left wall
             output[y * w] = b'|';
             lum_buffer[y * w] = if gravity_dir == 1 { -1.5 } else { -1.0 };
 
-            // Right wall (at panel_x in game modes, w-1 in sandbox)
             if game_mode != GameMode::Sandbox && panel_x > 1 {
-                // Right border is drawn by panel code
             } else {
                 output[y * w + w - 1] = b'|';
                 lum_buffer[y * w + w - 1] = if gravity_dir == 3 { -1.5 } else { -1.0 };
             }
         }
 
-        // 3D Target zone rendering - spinning concentric rings
         if let Some((tx, ty, tr)) = target {
-            // Two rings: outer and inner, spinning at different speeds
             let rings: [(f64, f64); 2] = [
                 (1.0, 1.2),    // outer ring: full radius, speed 1.2
                 (0.5, -2.0),   // inner ring: half radius, speed -2.0 (opposite direction)
@@ -809,38 +743,31 @@ fn main() -> std::io::Result<()> {
                 let rot_angle = animation_time * speed;
                 let (sin_r, cos_r) = rot_angle.sin_cos();
 
-                // Render the ring as 3D points - sample around the circle
                 let num_points = 80;
                 for i in 0..num_points {
                     let theta = (i as f64 / num_points as f64) * std::f64::consts::TAU;
                     let (sin_t, cos_t) = theta.sin_cos();
 
-                    // Circle in 3D space (in XZ plane, rotated around X axis)
                     let x3d = ring_radius * cos_t;
                     let y3d = 0.0;
                     let z3d = ring_radius * sin_t;
 
-                    // Rotate around X axis (tilts the ring)
                     let x_rot = x3d;
                     let y_rot = y3d * cos_r - z3d * sin_r;
                     let z_rot = y3d * sin_r + z3d * cos_r;
 
-                    // Project to screen (x is doubled for aspect ratio correction)
                     let sx = tx + x_rot * 2.0;
                     let sy = ty + y_rot;
 
-                    // Draw with 2-character width (render at -1, 0, +1 offsets)
                     for thick_offset in -1i32..=1 {
                         let draw_x = (sx + thick_offset as f64).round() as i32;
                         let draw_y = sy.round() as i32;
 
                         if draw_x >= 1 && draw_x < w as i32 - 26 && draw_y >= 1 && draw_y < panel_top as i32 {
                             let idx = draw_y as usize * w + draw_x as usize;
-                            // Use z_rot for depth sorting
                             let depth = z_rot;
                             if depth > zbuffer[idx] {
                                 zbuffer[idx] = depth;
-                                // Brightness varies with depth - front is brighter
                                 let brightness = (z_rot / ring_radius + 1.0) * 0.5; // 0 to 1
                                 let lum_idx = (brightness * 11.99) as usize;
                                 output[idx] = luminance_chars[lum_idx.min(11)];
@@ -852,29 +779,23 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // Right score panel (25 chars wide) - only in game modes
         if game_mode != GameMode::Sandbox && panel_x > 1 {
-            // Vertical border
             for y in 1..panel_top {
                 let idx = y * w + panel_x;
                 output[idx] = b'|';
                 lum_buffer[idx] = -1.0;
             }
-            // Top corner
             output[panel_x] = b'+';
             lum_buffer[panel_x] = -1.0;
-            // Bottom corner (where it meets info panel)
             let idx = panel_top * w + panel_x;
             output[idx] = b'+';
             lum_buffer[idx] = -1.0;
 
-            // Horizontal top border for panel
             for x in (panel_x + 1)..(w - 1) {
                 output[x] = b'-';
                 lum_buffer[x] = -1.0;
             }
 
-            // Panel content
             let mode_name = match game_mode {
                 GameMode::Sandbox => "SANDBOX",
                 GameMode::Juggler => "JUGGLER",
@@ -899,7 +820,6 @@ fn main() -> std::io::Result<()> {
                 }
             }
 
-            // Mode-specific info
             let info_str = match game_mode {
                 GameMode::Juggler => format!(" Time: {:.1}s ", game_time),
                 GameMode::TargetZones => format!(" Hits: {} ", targets_hit),
@@ -915,7 +835,6 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // Cursor marker (white O)
         if mouse_initialized {
             let cx = prev_mouse_x.round() as i32;
             let cy = prev_mouse_y.round() as i32;
@@ -926,7 +845,6 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // Small black hole circle at cursor
         if blackhole_mode {
             let cx = prev_mouse_x.round() as i32;
             let cy = prev_mouse_y.round() as i32;
@@ -947,7 +865,6 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // White hole with gradient at cursor
         if whitehole_mode {
             let cx = prev_mouse_x.round() as i32;
             let cy = prev_mouse_y.round() as i32;
@@ -961,10 +878,8 @@ fn main() -> std::io::Result<()> {
                         if dist <= 2.5 {
                             let idx = sy as usize * w + sx as usize;
                             let intensity = 1.0 - dist / 2.5;  // 1.0 at center, 0.0 at edge
-                            // Gradient: center is brightest (@), edges are dimmest (.)
                             let lum_idx = (intensity * 11.99) as usize;
                             output[idx] = luminance_chars[lum_idx.min(11)];
-                            // Color gradient: bright white at center, dark at edges
                             lum_buffer[idx] = -11.0 - (1.0 - intensity);  // -11 to -12
                         }
                     }
@@ -972,15 +887,11 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // Info panel (always on top)
-        // Divider line
         let right_edge = if game_mode != GameMode::Sandbox && panel_x > 1 { panel_x } else { w - 1 };
         for x in 0..w {
             let idx = panel_top * w + x;
-            // Determine character: + at corners, - otherwise
             let ch = if x == 0 || x == w - 1 || x == right_edge { b'+' } else { b'-' };
             output[idx] = ch;
-            // Gravity highlight only for main game area (up to right_edge)
             if x <= right_edge {
                 lum_buffer[idx] = if gravity_dir == 0 { -1.5 } else { -1.0 };
             } else {
@@ -988,7 +899,6 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // Clear panel area
         for y in (panel_top + 1)..h {
             for x in 1..(w - 1) {
                 let idx = y * w + x;
@@ -997,7 +907,6 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // Controls - row 1-2 of panel
         let controls1 = "0: Sandbox | 1: Juggler | 2: Targets | 3: Golf | R: gravity | Q: spawn | ESC: quit";
         let controls2 = "W: black hole | E: white hole | Arrows: push | Scroll: resize";
 
@@ -1020,7 +929,6 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        // Panel borders
         for y in panel_top..h {
             output[y * w] = b'|';
             output[y * w + w - 1] = b'|';
@@ -1033,7 +941,6 @@ fn main() -> std::io::Result<()> {
             lum_buffer[idx] = -1.0;
         }
 
-        // Render output with colors
         let mut result = String::with_capacity(w * h * 20);
         result.push_str("\x1b[H");
 
@@ -1044,15 +951,12 @@ fn main() -> std::io::Result<()> {
                 let lum = lum_buffer[idx];
 
                 if lum < -10.5 {
-                    // White hole gradient - bright white at center, dark at edges
                     let intensity = (-(lum + 11.0)).clamp(0.0, 1.0);  // 0 = bright, 1 = dark
                     let v = (255.0 * (1.0 - intensity * 0.9)) as u8;
                     result.push_str(&format!("\x1b[38;2;{};{};{}m{}", v, v, v, c));
                 } else if lum < -9.0 {
-                    // Black hole core - pure black/dark purple
                     result.push_str(&format!("\x1b[38;2;{};{};{}m{}", 30, 10, 50, c));
                 } else if lum < -8.0 {
-                    // CPU bar label or empty bar
                     if lum < -8.3 {
                         result.push_str("\x1b[38;2;150;150;150m");  // light gray label
                     } else {
@@ -1060,30 +964,22 @@ fn main() -> std::io::Result<()> {
                     }
                     result.push(c);
                 } else if lum < -5.5 {
-                    // Temp bar filled - desaturated green->yellow->orange->red
-                    // lum goes from -6.0 (green) to -7.0 (red)
                     let ratio = (-(lum + 6.0)).clamp(0.0, 1.0);
-                    // Desaturated colors with some base brightness
                     let (r, g, b) = if ratio < 0.33 {
-                        // Green to yellow
                         let t = ratio / 0.33;
                         (80 + (t * 100.0) as u8, 160, 60)
                     } else if ratio < 0.66 {
-                        // Yellow to orange
                         let t = (ratio - 0.33) / 0.33;
                         (180 + (t * 40.0) as u8, (160.0 - t * 60.0) as u8, 50)
                     } else {
-                        // Orange to red
                         let t = (ratio - 0.66) / 0.34;
                         (220, (100.0 - t * 40.0) as u8, (50.0 + t * 30.0) as u8)
                     };
                     result.push_str(&format!("\x1b[38;2;{};{};{}m{}", r, g, b, c));
                 } else if lum < -4.0 {
-                    // Cursor - white
                     result.push_str("\x1b[38;2;255;255;255m");
                     result.push(c);
                 } else if lum < 0.0 {
-                    // Border - desaturated blue if gravity wall (-1.5), gray otherwise (-1.0)
                     if lum < -1.2 {
                         result.push_str("\x1b[38;2;100;120;160m");  // desaturated blue gravity wall
                     } else {
@@ -1091,13 +987,11 @@ fn main() -> std::io::Result<()> {
                     }
                     result.push(c);
                 } else if c != ' ' {
-                    // Heart - strong gradient from very dark to light blue
                     let brightness = lum.clamp(0.0, 1.0);
                     let mut r = 5.0 + 195.0 * brightness;    // 5 -> 200
                     let mut g = 10.0 + 210.0 * brightness;   // 10 -> 220
                     let mut b = 30.0 + 225.0 * brightness;   // 30 -> 255
 
-                    // Darken when near black hole
                     if blackhole_mode {
                         let dx = (x as f64 - prev_mouse_x) / 2.0;
                         let dy = y as f64 - prev_mouse_y;
@@ -1108,7 +1002,6 @@ fn main() -> std::io::Result<()> {
                         b = b * (1.0 - dark_factor * 0.9);
                     }
 
-                    // Brighten when near white hole
                     if whitehole_mode {
                         let dx = (x as f64 - prev_mouse_x) / 2.0;
                         let dy = y as f64 - prev_mouse_y;

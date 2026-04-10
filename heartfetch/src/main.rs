@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use std::fs;
 use std::process::Command;
 
-// Taubin heart implicit surface
 fn heart_implicit(x: f64, y: f64, z: f64) -> f64 {
     let x2 = x * x;
     let y2 = y * y;
@@ -17,7 +16,6 @@ fn heart_implicit(x: f64, y: f64, z: f64) -> f64 {
     let term = x2 + 2.25 * y2 + z2 - 1.0;
     let base = term * term * term - x2 * z3 - 0.045 * y2 * z3;
 
-    // Deepen the cleft
     let cleft_depth = 0.35;
     let cleft_width = 0.02;
     let z_pos = z.max(0.0);
@@ -84,12 +82,10 @@ fn render_heart(rot_h: f64, width: usize, height: usize) -> Vec<Vec<(char, u8, u
     let rot_v = 0.0_f64;
     let (sin_v, cos_v) = rot_v.sin_cos();
 
-    // Scale based on height - heart fills the vertical space
     let heart_scale = height as f64 / 1.15;
     let cx = width as f64 / 2.0;
     let cy = height as f64 / 2.0;
 
-    // Light from camera, slightly right and slightly down
     let (light_x, light_y, light_z) = (0.15, 0.95, -0.1);
 
     for sy in 0..height {
@@ -122,7 +118,6 @@ fn render_heart(rot_h: f64, width: usize, height: usize) -> Vec<Vec<(char, u8, u
                 let lum_idx = ((lum * 11.99) as usize).min(11);
                 let c = luminance_chars[lum_idx] as char;
 
-                // Blue gradient
                 let r = (5.0 + 195.0 * lum) as u8;
                 let g = (10.0 + 210.0 * lum) as u8;
                 let b = (30.0 + 225.0 * lum) as u8;
@@ -137,7 +132,6 @@ fn render_heart(rot_h: f64, width: usize, height: usize) -> Vec<Vec<(char, u8, u
 fn get_system_info() -> Vec<(String, String)> {
     let mut info = Vec::new();
 
-    // Username and hostname
     let user = std::env::var("USER").unwrap_or_else(|_| "user".to_string());
     let hostname = fs::read_to_string("/etc/hostname")
         .unwrap_or_else(|_| "localhost".to_string())
@@ -146,7 +140,6 @@ fn get_system_info() -> Vec<(String, String)> {
     info.push(("".to_string(), format!("{}@{}", user, hostname)));
     info.push(("".to_string(), "-".repeat(user.len() + hostname.len() + 1)));
 
-    // OS
     if let Ok(os_release) = fs::read_to_string("/etc/os-release") {
         for line in os_release.lines() {
             if line.starts_with("PRETTY_NAME=") {
@@ -157,13 +150,11 @@ fn get_system_info() -> Vec<(String, String)> {
         }
     }
 
-    // Kernel
     if let Ok(output) = Command::new("uname").arg("-r").output() {
         let kernel = String::from_utf8_lossy(&output.stdout).trim().to_string();
         info.push(("Kernel".to_string(), kernel));
     }
 
-    // Uptime
     if let Ok(uptime_str) = fs::read_to_string("/proc/uptime") {
         if let Some(secs_str) = uptime_str.split_whitespace().next() {
             if let Ok(secs) = secs_str.parse::<f64>() {
@@ -174,18 +165,15 @@ fn get_system_info() -> Vec<(String, String)> {
         }
     }
 
-    // Shell
     if let Ok(shell) = std::env::var("SHELL") {
         let shell_name = shell.rsplit('/').next().unwrap_or(&shell);
         info.push(("Shell".to_string(), shell_name.to_string()));
     }
 
-    // Terminal
     if let Ok(term) = std::env::var("TERM") {
         info.push(("Terminal".to_string(), term));
     }
 
-    // CPU
     if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
         for line in cpuinfo.lines() {
             if line.starts_with("model name") {
@@ -194,7 +182,6 @@ fn get_system_info() -> Vec<(String, String)> {
                         .replace("(R)", "")
                         .replace("(TM)", "")
                         .replace("CPU ", "");
-                    // Truncate if too long
                     let name = if name.len() > 35 {
                         format!("{}...", &name[..32])
                     } else {
@@ -207,7 +194,6 @@ fn get_system_info() -> Vec<(String, String)> {
         }
     }
 
-    // Memory
     if let Ok(meminfo) = fs::read_to_string("/proc/meminfo") {
         let mut total: u64 = 0;
         let mut available: u64 = 0;
@@ -236,17 +222,13 @@ fn get_system_info() -> Vec<(String, String)> {
 fn main() -> std::io::Result<()> {
     let mut stdout = stdout();
 
-    // Get system info
     let sys_info = get_system_info();
 
-    // Heart dimensions based on info lines
     let heart_height = sys_info.len();
     let heart_width = heart_height * 2;  // Aspect ratio correction
 
-    // Hide cursor during animation
     execute!(stdout, Hide)?;
 
-    // Do one full revolution
     let start = Instant::now();
     let revolution_time = 2.0; // 2 seconds for one revolution
 
@@ -258,7 +240,6 @@ fn main() -> std::io::Result<()> {
             break;
         }
 
-        // Ease in-out: slow start, fast middle, slow end
         let eased = if progress < 0.5 {
             2.0 * progress * progress
         } else {
@@ -267,12 +248,9 @@ fn main() -> std::io::Result<()> {
         let rot_h = eased * std::f64::consts::TAU;
         let heart = render_heart(rot_h, heart_width, heart_height);
 
-        // Move to start
         execute!(stdout, MoveTo(0, 0))?;
 
-        // Render heart and info side by side
         for y in 0..heart_height {
-            // Heart column
             for x in 0..heart_width {
                 let (c, r, g, b) = heart[y][x];
                 if c != ' ' {
@@ -284,18 +262,15 @@ fn main() -> std::io::Result<()> {
 
             print!("\x1b[0m  "); // Gap between heart and info
 
-            // Info column
             if y < sys_info.len() {
                 let (label, value) = &sys_info[y];
                 if label.is_empty() {
-                    // Header line (user@host or separator)
                     print!("\x1b[38;2;100;150;255m{}\x1b[0m", value);
                 } else {
                     print!("\x1b[38;2;100;150;255m{}\x1b[0m: {}", label, value);
                 }
             }
 
-            // Clear rest of line and newline
             print!("\x1b[K\n");
         }
 
@@ -303,7 +278,6 @@ fn main() -> std::io::Result<()> {
         std::thread::sleep(Duration::from_millis(16)); // ~60fps
     }
 
-    // Final frame at rotation = 0 (front-facing)
     let heart = render_heart(0.0, heart_width, heart_height);
     execute!(stdout, MoveTo(0, 0))?;
 
@@ -331,7 +305,6 @@ fn main() -> std::io::Result<()> {
         print!("\x1b[K\n");
     }
 
-    // Show cursor and reset
     stdout.flush()?;
     execute!(stdout, Show)?;
     print!("\x1b[0m");
